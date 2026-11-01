@@ -15,16 +15,61 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Show what actually got uploaded
+        run: |
+          echo "=== Repo contents (2 levels) ==="
+          find . -maxdepth 2 -not -path './.git*' | sort
+
+      - name: Self-heal common upload slips
+        run: |
+          # (0) the zip file itself was committed -> unpack it
+          if [ ! -f Makefile ] && command -v unzip >/dev/null 2>&1 && ls *.zip >/dev/null 2>&1; then
+            echo ">> Found a zip in the repo - unpacking it"
+            for z in *.zip; do unzip -o "$z" >/dev/null || true; done
+          fi
+          # (1) project landed inside a subfolder (e.g. neon_rush/)
+          if [ ! -f Makefile ]; then
+            for d in */; do
+              if [ -f "${d}Makefile" ]; then
+                echo ">> Project found in ${d} - moving it to repo root"
+                mv "${d}"* . || true
+                rmdir "$d" 2>/dev/null || true
+                break
+              fi
+            done
+          fi
+          # (2) sources dragged in loose (no src/ folder)
+          if [ ! -f src/main.c ] && ls *.c >/dev/null 2>&1; then
+            echo ">> Sources are at repo root - moving them into src/"
+            mkdir -p src
+            mv *.c *.h *.inc src/ 2>/dev/null || true
+          fi
+          # (3) folder uploaded with a different case (Src / SRC)
+          if [ ! -f src/main.c ]; then
+            for alt in Src SRC; do
+              if [ -d "$alt" ]; then mv "$alt" src; echo ">> Renamed ${alt} -> src"; break; fi
+            done
+          fi
+          # (4) track files landed loose (no data/ folder)
+          if [ ! -f data/tracks/neon_loop.trk ] && ls *.trk >/dev/null 2>&1; then
+            echo ">> Track files at repo root - moving into data/tracks/"
+            mkdir -p data/tracks
+            mv *.trk data/tracks/ || true
+          fi
+          echo "=== Layout the build will use ==="
+          find . -maxdepth 2 -not -path './.git*' | sort
+
       - name: Build
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          make clean || true     # drop stale .o/.elf/EBOOT.PBP uploaded with the zip
           make
 
       - name: Package EBOOT + data
         run: |
           mkdir -p out/NEON_RUSH
           cp EBOOT.PBP out/NEON_RUSH/
-          cp -r data out/NEON_RUSH/
+          cp -r data out/NEON_RUSH/ 2>/dev/null || echo "(no data/ folder - game falls back to built-in track)"
 
       - name: Upload build
         uses: actions/upload-artifact@v4
