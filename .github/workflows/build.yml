@@ -1,0 +1,34 @@
+name: Build NEON RUSH
+
+on:
+  workflow_dispatch:        # manual "Run workflow" button
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: pspdev/pspdev:latest     # official PSP toolchain (gcc + pspsdk)
+      options: --user root
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          make
+
+      - name: Package EBOOT + data
+        run: |
+          mkdir -p out/NEON_RUSH
+          cp EBOOT.PBP out/NEON_RUSH/
+          cp -r data out/NEON_RUSH/
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEON_RUSH-PSP
+          path: out/NEON_RUSH
+          if-no-files-found: error
